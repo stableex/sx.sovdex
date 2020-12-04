@@ -29,17 +29,14 @@ namespace sovdex {
 
         uint64_t primary_key() const { return connectorbal.symbol.code().raw(); }
     };
-    typedef eosio::multi_index< "pair"_n, pair_row > pair;
+    typedef eosio::multi_index< "pair"_n, pair_row > sovtable;
 
     /**
      * ## STATIC `get_fee`
      *
-     * Get sovdex total fee. 0.10% for each hop + 0.01% rounding error
+     * Get sovdex total fee. 0.2%
      *
      * ### params
-     *
-     * - `{symbol} sym_in` - incoming symbol
-     * - `{symbol} sym_out` - outgoing symbol
      *
      * ### returns
      *
@@ -52,9 +49,9 @@ namespace sovdex {
      * // => 0
      * ```
      */
-    static uint8_t get_fee(symbol& sym_in, symbol& sym_out)
+    static uint8_t get_fee()
     {
-        return (sym_in == SOV.get_symbol() || sym_out == SOV.get_symbol()) ? 20 : 40;
+        return 20;
     }
 
     /**
@@ -72,42 +69,57 @@ namespace sovdex {
      * - `{pair<asset, asset>}` - pair of reserve assets
      *```
      */
-    static std::pair<asset, asset> get_reserves( symbol sym_in, symbol sym_out)
+    static std::pair<uint64_t, uint64_t> get_reserves( symbol sym_in, symbol sym_out)
     {
         check(sym_in!=sym_out, "SovdexLibrary: INVALID_PAIR");
+        if(sym_in == SOV.get_symbol()){   //SOV->XXX
+            sovdex::sovtable _sovtbl( sovdex::code, sym_out.code().raw() );
+            auto it = _sovtbl.begin();
+            check(it != _sovtbl.end(), "SovdexLibrary: INVALID_PAIR");
 
-        asset bal1, bal2, sovbal1, sovbal2, in_res, out_res;
-        if(sym_in != SOV.get_symbol()){
-            sovdex::pair _pair( code, sym_in.code().raw() );
-            auto rowit = _pair.begin();
-            check(rowit != _pair.end(), "SovdexLibrary: INVALID_SYMBOL");
-            check(rowit->cw == 50, "SovdexLibrary: only 50/50 pools supported");
-            sovbal1 = rowit->outstandingbal;
-            bal1 = rowit->connectorbal;
+            return { it->outstandingbal.amount, 2*it->connectorbal.amount };
         }
-        if(sym_out != SOV.get_symbol()){
-            sovdex::pair _pair( code, sym_out.code().raw() );
-            auto rowit = _pair.begin();
-            check(rowit != _pair.end(), "SovdexLibrary: INVALID_SYMBOL");
-            check(rowit->cw == 50, "SovdexLibrary: only 50/50 pools supported");
-            sovbal2 = rowit->outstandingbal;
-            bal2 = rowit->connectorbal;
+        if(sym_out == SOV.get_symbol()){   //SOV->XXX
+            sovdex::sovtable _sovtbl( sovdex::code, sym_in.code().raw() );
+            auto it = _sovtbl.begin();
+            check(it != _sovtbl.end(), "SovdexLibrary: INVALID_PAIR");
+
+            return { 2*it->connectorbal.amount, it->outstandingbal.amount };
+        }
+        check(false, "SovdexLibrary: Getting reserves for non-SOV pair");
+        return {0, 0}; //unreachable
+    }
+
+    /**
+     * ## STATIC `get_amount_out`
+     *
+     * Get expected conversion return
+     *
+     * ### params
+     *
+     * - `{asset} in` - amount in
+     * - `{symbol} out_sym` - return symbol
+     *
+     * ### returns
+     *
+     * - `{asset}` - expected return
+     *```
+     */
+    static asset get_amount_out(asset in, symbol out_sym) {
+
+        check(in.symbol != out_sym, "SovdexLibrary: INVALID_PAIR");
+        double fee = get_fee();
+        if(in.symbol!=SOV.get_symbol() && out_sym!=SOV.get_symbol()) {      //if XXX->YYY - convert XXX to SOV first
+            auto [res_in, res_out] = get_reserves(in.symbol, SOV.get_symbol());
+            in.amount = res_out * (static_cast<double>(in.amount) / (res_in + in.amount));
+            in.amount *= (10000-fee)/10000;
+            in.symbol = SOV.get_symbol();
         }
 
-        if(sym_in == SOV.get_symbol()){     //SOV->XXX
-            in_res = sovbal1;
-            out_res = bal1;
-        }
-        else if(sym_out == SOV.get_symbol()){   //XXX->SOV
-            in_res = bal2;
-            out_res = sovbal2;
-        }
-        else {      //XXX->YYY
-            in_res = bal1;
-            out_res.symbol = sym_out;
-            out_res.amount = bal2.amount * ((double)sovbal1.amount / sovbal2.amount);
-        }
-
-        return {in_res, out_res};
+        //now guaranteed to be XXX->SOV or SOV->YYY
+        auto [res_in, res_out] = get_reserves(in.symbol, out_sym);
+        auto amount_out = res_out * (static_cast<double>(in.amount) / (res_in + in.amount));
+        amount_out *= (10000-fee)/10000;
+        return { static_cast<int64_t>(amount_out), out_sym };
     }
 }
