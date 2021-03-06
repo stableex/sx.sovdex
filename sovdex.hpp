@@ -79,12 +79,12 @@ namespace sovdex {
 
             return { it->outstandingbal.amount, 2*it->connectorbal.amount };
         }
-        if(sym_out == SOV.get_symbol()){   //SOV->XXX
+        if(sym_out == SOV.get_symbol()){   //XXX->SOV
             sovdex::sovtable _sovtbl( sovdex::code, sym_in.code().raw() );
             auto it = _sovtbl.begin();
             check(it != _sovtbl.end(), "SovdexLibrary: INVALID_PAIR");
 
-            return { 2*it->connectorbal.amount, it->outstandingbal.amount };
+            return { it->connectorbal.amount, it->outstandingbal.amount };
         }
         check(false, "SovdexLibrary: Getting reserves for non-SOV pair");
         return {0, 0}; //unreachable
@@ -110,16 +110,19 @@ namespace sovdex {
         check(in.symbol != out_sym, "SovdexLibrary: INVALID_PAIR");
         double fee = get_fee();
         if(in.symbol!=SOV.get_symbol() && out_sym!=SOV.get_symbol()) {      //if XXX->YYY - convert XXX to SOV first
-            auto [res_in, res_out] = get_reserves(in.symbol, SOV.get_symbol());
-            in.amount = res_out * (static_cast<double>(in.amount) / (res_in + in.amount));
-            in.amount *= (10000-fee)/10000;
+            const auto [res_in, res_out] = get_reserves(in.symbol, SOV.get_symbol());
+            double num = 1 - (static_cast<double>(in.amount)) / (res_in + in.amount);
+            in.amount = res_out * ( 1 - pow(num, 0.5));
+            in.amount = in.amount * (10000 - fee) / 10000;
             in.symbol = SOV.get_symbol();
         }
 
         //now guaranteed to be XXX->SOV or SOV->YYY
-        auto [res_in, res_out] = get_reserves(in.symbol, out_sym);
-        auto amount_out = res_out * (static_cast<double>(in.amount) / (res_in + in.amount));
-        amount_out *= (10000-fee)/10000;
+        const auto [res_in, res_out] = get_reserves(in.symbol, out_sym);
+        double num = 1 - (static_cast<double>(in.amount)) / (res_in + in.amount);
+        auto amount_out = res_out * (1 - pow( num, 0.5 ));
+        amount_out = amount_out * (10000 - fee) / 10000;
+
         return { static_cast<int64_t>(amount_out), out_sym };
     }
 }
