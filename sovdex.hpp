@@ -108,21 +108,22 @@ namespace sovdex {
     static asset get_amount_out(asset in, symbol out_sym) {
 
         check(in.symbol != out_sym, "SovdexLibrary: INVALID_PAIR");
-        double fee = get_fee();
-        if(in.symbol!=SOV.get_symbol() && out_sym!=SOV.get_symbol()) {      //if XXX->YYY - convert XXX to SOV first
-            const auto [res_in, res_out] = get_reserves(in.symbol, SOV.get_symbol());
-            double num = 1 - (static_cast<double>(in.amount)) / (res_in + in.amount);
-            in.amount = res_out * ( 1 - pow(num, 0.5));
-            in.amount = in.amount * (10000 - fee) / 10000;
-            in.symbol = SOV.get_symbol();
-        }
+        // double fee = get_fee();
+        // if(in.symbol!=SOV.get_symbol() && out_sym!=SOV.get_symbol()) {      //if XXX->YYY - convert XXX to SOV first
+        //     const auto [res_in, res_out] = get_reserves(in.symbol, SOV.get_symbol());
+        //     double num = 1 - (static_cast<double>(in.amount)) / (res_in + in.amount);
+        //     in.amount = res_out * ( 1 - pow(num, 0.5));
+        //     in.amount = in.amount * (10000 - fee) / 10000;
+        //     in.symbol = SOV.get_symbol();
+        // }
 
         //now guaranteed to be XXX->SOV or SOV->YYY
         const auto [res_in, res_out] = get_reserves(in.symbol, out_sym);
-        double num = 1 - (static_cast<double>(in.amount)) / (res_in + in.amount);
-        auto amount_out = res_out * (1 - pow( num, 0.5 ));
-        amount_out = amount_out * (10000 - fee) / 10000;
+        const auto amount_in = static_cast<double>(in.amount) * (1 - 0.004);    // 0.4% fee?
+        double out = -1 * static_cast<double>(res_out) * (sqrt( 1 - amount_in / (res_in + amount_in)) - 1);
+        auto amount_out = out * 0.99;   //burn 1%
+        const auto res = asset{ static_cast<int64_t>(amount_out), out_sym };
 
-        return { static_cast<int64_t>(amount_out), out_sym };
+        return res;
     }
 }
